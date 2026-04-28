@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS roll_specs;
+DROP TABLE IF EXISTS rolls;
+DROP TABLE IF EXISTS user_roll_state;
+DROP TABLE IF EXISTS users;

@@ -1,0 +1,6 @@
+.env
+bin
+tmp
+*.log
+postgres_data
+coverage.out

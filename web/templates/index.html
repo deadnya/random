@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>/random</title>
+        <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+        <link rel="stylesheet" type="text/css" href="/static/styles.css" />
+    </head>
+    <body>
+        <header class="site-header">
+            <div class="header-inner">
+                <div class="header-left">
+                    <h1 class="site-title">/random</h1>
+                    <nav class="nav-menu">
+                        <button
+                            class="nav-btn active"
+                            data-view="roll"
+                            onclick="App.switchView('roll')"
+                        >Roll</button>
+                        <button
+                            class="nav-btn"
+                            data-view="history"
+                            onclick="App.switchView('history')"
+                        >History</button>
+                        <button
+                            class="nav-btn"
+                            data-view="leaderboard"
+                            onclick="App.switchView('leaderboard')"
+                        >Leaderboard</button>
+                    </nav>
+                </div>
+                <div class="header-right">
+                    <input
+                        id="header-username"
+                        class="username-input"
+                        type="text"
+                        maxlength="24"
+                        placeholder="Username"
+                        value=""
+                    />
+                    <button class="username-save" onclick="App.saveUsername()">
+                        Save
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="container">
+            <main>
+                <section id="view-roll" class="view-section active">
+                    <div class="panel">
+                        <div
+                            id="roll-controls"
+                            hx-get="/roll/state"
+                            hx-trigger="refresh-roll-state from:body"
+                            hx-swap="innerHTML"
+                        ><p class="meta">Loading roll state...</p>
+                        </div>
+
+                        <div id="roll-result">
+                            <p class="meta">No roll yet. Hit the button to generate one.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="view-history" class="view-section">
+                    <div id="history-panel">
+                        <div class="panel">
+                            <p class="meta">Loading roll history...</p>
+                        </div>
+                    </div>
+                    <div id="unlocked-specs-panel">
+                        <div class="panel">
+                            <p class="meta">Loading unlocked specs...</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="view-leaderboard" class="view-section">
+                    <div class="grid">
+                        <div id="leaderboard-panel">
+                            <div class="panel">
+                                <p class="meta">Loading leaderboard...</p>
+                            </div>
+                        </div>
+                        <div id="total-value-leaderboard-panel">
+                            <div class="panel">
+                                <p class="meta">Loading total value leaderboard...</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <script src="/static/app.js"></script>
+    </body>
+</html>
