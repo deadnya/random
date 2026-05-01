@@ -31,7 +31,24 @@ func main() {
 		log.Fatalf("unable to parse templates: %v", err)
 	}
 
-	srv := &server{cfg: cfg, db: db, tmpl: tmpl, scorer: scorer}
+	var producer *kafkaProducer
+	if cfg.KafkaBrokers != "" && cfg.KafkaTopic != "" {
+		if err := ensureKafkaTopic(cfg.KafkaBrokers, cfg.KafkaTopic); err != nil {
+			log.Printf("kafka: unable to ensure topic: %v", err)
+		}
+		producer = newKafkaProducer(cfg.KafkaBrokers, cfg.KafkaTopic)
+		defer producer.close()
+
+		worker := newOutboxWorker(db, producer.writer)
+		go worker.run(context.Background())
+	}
+
+	var lbClient *leaderboardClient
+	if cfg.LeaderboardServiceURL != "" {
+		lbClient = newLeaderboardClient(cfg.LeaderboardServiceURL)
+	}
+
+	srv := &server{cfg: cfg, db: db, tmpl: tmpl, scorer: scorer, kafkaProducer: producer, leaderboardClient: lbClient}
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.AppPort),
 		Handler:           logRequest(srv.routes()),

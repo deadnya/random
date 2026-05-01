@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -33,7 +34,7 @@ type leaderboardEntry struct {
 	BestNumber int
 }
 
-func (s *server) persistRoll(ctx context.Context, userID int64, number, total int, specs []spec) error {
+func (s *server) persistRoll(ctx context.Context, userID int64, username string, number, total int, specs []spec) error {
 	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -60,6 +61,27 @@ func (s *server) persistRoll(ctx context.Context, userID int64, number, total in
 		`, rollID, item.Key, item.Value, item.Score)
 		if err != nil {
 			return fmt.Errorf("insert roll spec: %w", err)
+		}
+	}
+
+	if s.cfg.KafkaTopic != "" {
+		evt := rollEvent{
+			UserID:       userID,
+			Username:     username,
+			RolledNumber: number,
+			TotalScore:   total,
+			CreatedAt:    time.Now().UTC(),
+		}
+		data, err := json.Marshal(evt)
+		if err != nil {
+			return fmt.Errorf("marshal outbox payload: %w", err)
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO outbox (topic, key, payload)
+			VALUES ($1, $2, $3)
+		`, s.cfg.KafkaTopic, fmt.Sprintf("%d", userID), data)
+		if err != nil {
+			return fmt.Errorf("insert outbox: %w", err)
 		}
 	}
 
@@ -134,6 +156,13 @@ func (s *server) fetchUnlockedSpecs(ctx context.Context, userID int64) ([]unlock
 }
 
 func (s *server) fetchLeaderboard(ctx context.Context, limit int) ([]leaderboardEntry, error) {
+	if s.leaderboardClient != nil {
+		entries, err := s.leaderboardClient.fetchLeaderboard(ctx, limit)
+		if err == nil {
+			return entries, nil
+		}
+	}
+
 	rows, err := s.db.Query(ctx, `
 		SELECT u.username,
 		       MAX(r.total_score) AS best_score,
@@ -171,6 +200,13 @@ func (s *server) fetchLeaderboard(ctx context.Context, limit int) ([]leaderboard
 }
 
 func (s *server) fetchTotalValueLeaderboard(ctx context.Context, limit int) ([]totalValueLeaderboardEntry, error) {
+	if s.leaderboardClient != nil {
+		entries, err := s.leaderboardClient.fetchTotalValueLeaderboard(ctx, limit)
+		if err == nil {
+			return entries, nil
+		}
+	}
+
 	rows, err := s.db.Query(ctx, `
 		SELECT u.username,
 		       SUM(r.total_score) AS total_value,

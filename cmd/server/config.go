@@ -23,6 +23,13 @@ type config struct {
 	RollMaxTokens     int
 	RollRefillSeconds int
 	RarityScoreScale  float64
+
+	KafkaBrokers    string
+	KafkaTopic      string
+
+	LeaderboardServiceURL         string
+	LeaderboardServicePort        int
+	LeaderboardRefreshIntervalSec int
 }
 
 func (c config) databaseURL() string {
@@ -53,7 +60,12 @@ func loadConfig() config {
 		DBMinConns:        int32(envInt("DB_MIN_CONNS", 2)),
 		RollMaxTokens:     envInt("ROLL_MAX_TOKENS", 10),
 		RollRefillSeconds: envInt("ROLL_REFILL_SECONDS", 60),
-		RarityScoreScale:  envFloat("RARITY_SCORE_SCALE", 150),
+		RarityScoreScale:              envFloat("RARITY_SCORE_SCALE", 150),
+		KafkaBrokers:                  envString("KAFKA_BROKERS", "localhost:9092"),
+		KafkaTopic:                    envString("KAFKA_TOPIC", "roll.events"),
+		LeaderboardServiceURL:         envString("LEADERBOARD_SERVICE_URL", "http://localhost:8081"),
+		LeaderboardServicePort:        envInt("LEADERBOARD_SERVICE_PORT", 8081),
+		LeaderboardRefreshIntervalSec: envInt("LEADERBOARD_REFRESH_INTERVAL_SECONDS", 30),
 	}
 
 	if cfg.DBMinConns > cfg.DBMaxConns {

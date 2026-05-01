@@ -14,10 +14,12 @@ import (
 )
 
 type server struct {
-	cfg    config
-	db     *pgxpool.Pool
-	tmpl   *template.Template
-	scorer *rarityScorer
+	cfg               config
+	db                *pgxpool.Pool
+	tmpl              *template.Template
+	scorer            *rarityScorer
+	kafkaProducer     *kafkaProducer
+	leaderboardClient *leaderboardClient
 }
 
 func (s *server) routes() http.Handler {
@@ -26,26 +28,21 @@ func (s *server) routes() http.Handler {
 	fs := http.FileServer(http.Dir("web/static"))
 	mux.Handle("/static/", http.StripPrefix("/static/", fs))
 
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/roll", s.handleRoll)
-	mux.HandleFunc("/roll/state", s.handleRollState)
-	mux.HandleFunc("/profile/init", s.handleProfileInit)
-	mux.HandleFunc("/profile/view", s.handleProfileView)
-	mux.HandleFunc("/profile/username", s.handleProfileUsername)
-	mux.HandleFunc("/history", s.handleHistory)
-	mux.HandleFunc("/specs/unlocked", s.handleUnlockedSpecs)
-	mux.HandleFunc("/leaderboard", s.handleLeaderboard)
-	mux.HandleFunc("/healthz", s.handleHealthz)
-	mux.HandleFunc("/leaderboard/total-value", s.handleTotalValueLeaderboard)
+	mux.HandleFunc("GET /", s.handleIndex)
+	mux.HandleFunc("POST /roll", s.handleRoll)
+	mux.HandleFunc("GET /roll/state", s.handleRollState)
+	mux.HandleFunc("POST /profile/init", s.handleProfileInit)
+	mux.HandleFunc("GET /profile/view", s.handleProfileView)
+	mux.HandleFunc("POST /profile/username", s.handleProfileUsername)
+	mux.HandleFunc("GET /history", s.handleHistory)
+	mux.HandleFunc("GET /specs/unlocked", s.handleUnlockedSpecs)
+	mux.HandleFunc("GET /leaderboard", s.handleLeaderboard)
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /leaderboard/total-value", s.handleTotalValueLeaderboard)
 	return mux
 }
 
 func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	data := struct {
 		RollMaxTokens     int
 		RollRefillSeconds int
@@ -60,11 +57,6 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleRoll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	user, err := s.userFromRequest(r)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -99,7 +91,7 @@ func (s *server) handleRoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	specs, total := s.scorer.calculate(number)
-	if err := s.persistRoll(r.Context(), user.ID, number, total, specs); err != nil {
+	if err := s.persistRoll(r.Context(), user.ID, user.Username, number, total, specs); err != nil {
 		http.Error(w, "unable to save roll", http.StatusInternalServerError)
 		return
 	}
@@ -110,11 +102,6 @@ func (s *server) handleRoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleRollState(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	user, err := s.userFromRequest(r)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -133,11 +120,6 @@ func (s *server) handleRollState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleProfileInit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	profileID, err := newProfileID()
 	if err != nil {
 		http.Error(w, "unable to create profile", http.StatusInternalServerError)
@@ -167,11 +149,6 @@ func (s *server) handleProfileInit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleProfileView(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	user, err := s.userFromRequest(r)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -184,11 +161,6 @@ func (s *server) handleProfileView(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleProfileUsername(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	user, err := s.userFromRequest(r)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -216,11 +188,6 @@ func (s *server) handleProfileUsername(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	user, err := s.userFromRequest(r)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -243,11 +210,6 @@ func (s *server) handleHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleUnlockedSpecs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	user, err := s.userFromRequest(r)
 	if err != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -270,11 +232,6 @@ func (s *server) handleUnlockedSpecs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	rows, err := s.fetchLeaderboard(r.Context(), 10)
 	if err != nil {
 		http.Error(w, "unable to load leaderboard", http.StatusInternalServerError)
@@ -290,11 +247,6 @@ func (s *server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 
